@@ -260,6 +260,7 @@ func (s *KeeperTestSuite) TestUnbondingDelegation() {
 		0,
 		time.Unix(0, 0).UTC(),
 		math.NewInt(5),
+		0,
 		address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"),
 	)
 
@@ -316,8 +317,8 @@ func (s *KeeperTestSuite) TestUnbondingDelegationsFromValidator() {
 		0,
 		time.Unix(0, 0).UTC(),
 		math.NewInt(5),
-		address.NewBech32Codec("cosmosvaloper"),
-		address.NewBech32Codec("cosmos"),
+		0,
+		address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"),
 	)
 
 	// set and retrieve a record
@@ -683,7 +684,7 @@ func (s *KeeperTestSuite) TestGetRedelegationsFromSrcValidator() {
 
 	rd := stakingtypes.NewRedelegation(addrDels[0], addrVals[0], addrVals[1], 0,
 		time.Unix(0, 0), math.NewInt(5),
-		math.LegacyNewDec(5), address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
+		math.LegacyNewDec(5), 0, address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
 
 	// set and retrieve a record
 	err := keeper.SetRedelegation(ctx, rd)
@@ -713,7 +714,7 @@ func (s *KeeperTestSuite) TestRedelegation() {
 
 	rd := stakingtypes.NewRedelegation(addrDels[0], addrVals[0], addrVals[1], 0,
 		time.Unix(0, 0).UTC(), math.NewInt(5),
-		math.LegacyNewDec(5), address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
+		math.LegacyNewDec(5), 0, address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
 
 	// test shouldn't have and redelegations
 	has, err := keeper.HasReceivingRedelegation(ctx, addrDels[0], addrVals[1])
@@ -1074,14 +1075,14 @@ func (s *KeeperTestSuite) TestUnbondingDelegationAddEntry() {
 		creationHeight,
 		time.Unix(0, 0).UTC(),
 		math.NewInt(10),
-		address.NewBech32Codec("cosmosvaloper"),
-		address.NewBech32Codec("cosmos"),
+		0,
+		address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"),
 	)
 	var initialEntries []stakingtypes.UnbondingDelegationEntry
 	initialEntries = append(initialEntries, ubd.Entries...)
 	require.Len(initialEntries, 1)
 
-	isNew := ubd.AddEntry(creationHeight, time.Unix(0, 0).UTC(), math.NewInt(5))
+	isNew := ubd.AddEntry(creationHeight, time.Unix(0, 0).UTC(), math.NewInt(5), 1)
 	require.False(isNew)
 	require.Len(ubd.Entries, 1) // entry was merged
 	require.NotEqual(initialEntries, ubd.Entries)
@@ -1090,7 +1091,7 @@ func (s *KeeperTestSuite) TestUnbondingDelegationAddEntry() {
 	require.Equal(ubd.Entries[0].Balance, math.NewInt(15))                   // 10 from previous + 5 from merged
 
 	newCreationHeight := int64(11)
-	isNew = ubd.AddEntry(newCreationHeight, time.Unix(1, 0).UTC(), math.NewInt(5))
+	isNew = ubd.AddEntry(newCreationHeight, time.Unix(1, 0).UTC(), math.NewInt(5), 2)
 	require.True(isNew)
 	require.Len(ubd.Entries, 2) // entry was appended
 	require.NotEqual(initialEntries, ubd.Entries)
@@ -1098,6 +1099,7 @@ func (s *KeeperTestSuite) TestUnbondingDelegationAddEntry() {
 	require.Equal(newCreationHeight, ubd.Entries[1].CreationHeight)
 	require.Equal(ubd.Entries[0].Balance, math.NewInt(15))
 	require.Equal(ubd.Entries[1].Balance, math.NewInt(5))
+	require.NotEqual(ubd.Entries[0].UnbondingId, ubd.Entries[1].UnbondingId) // appended entry has a new unbondingID
 }
 
 func (s *KeeperTestSuite) TestSetUnbondingDelegationEntry() {
@@ -1115,8 +1117,8 @@ func (s *KeeperTestSuite) TestSetUnbondingDelegationEntry() {
 		creationHeight,
 		time.Unix(0, 0).UTC(),
 		math.NewInt(5),
-		address.NewBech32Codec("cosmosvaloper"),
-		address.NewBech32Codec("cosmos"),
+		0,
+		address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"),
 	)
 
 	// set and retrieve a record
@@ -1146,7 +1148,8 @@ func (s *KeeperTestSuite) TestSetUnbondingDelegationEntry() {
 	require.Len(resUnbonding.Entries, 1)
 	require.NotEqual(initialEntries, resUnbonding.Entries)
 	require.Equal(creationHeight, resUnbonding.Entries[0].CreationHeight)
-	require.Equal(resUnbonding.Entries[0].Balance, math.NewInt(10)) // 5 from previous entry + 5 from merged entry
+	require.Equal(initialEntries[0].UnbondingId, resUnbonding.Entries[0].UnbondingId) // initial unbondingID remains unchanged
+	require.Equal(resUnbonding.Entries[0].Balance, math.NewInt(10))                   // 5 from previous entry + 5 from merged entry
 
 	// set unbonding delegation entry for newCreationHeight
 	// new entry is expected to be appended to the existing entries
@@ -1167,6 +1170,11 @@ func (s *KeeperTestSuite) TestSetUnbondingDelegationEntry() {
 	require.NotEqual(resUnbonding.Entries[0], resUnbonding.Entries[1])
 	require.Equal(creationHeight, resUnbonding.Entries[0].CreationHeight)
 	require.Equal(newCreationHeight, resUnbonding.Entries[1].CreationHeight)
+
+	// unbondingID is incremented on every call to SetUnbondingDelegationEntry
+	// unbondingID == 1 was skipped because the entry was merged with the existing entry with unbondingID == 0
+	// unbondingID comes from a global counter -> gaps in unbondingIDs are OK as long as every unbondingID is unique
+	require.Equal(uint64(2), resUnbonding.Entries[1].UnbondingId)
 }
 
 func (s *KeeperTestSuite) TestGetUBDQueueTimeSlice() {
@@ -1244,6 +1252,7 @@ func (s *KeeperTestSuite) TestGetUBDQueueTimeSlice() {
 				blockHeight,
 				time1,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1256,6 +1265,7 @@ func (s *KeeperTestSuite) TestGetUBDQueueTimeSlice() {
 				blockHeight,
 				time2,
 				math.NewInt(20),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1268,6 +1278,7 @@ func (s *KeeperTestSuite) TestGetUBDQueueTimeSlice() {
 				blockHeight,
 				time3,
 				math.NewInt(30),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1383,6 +1394,7 @@ func (s *KeeperTestSuite) TestGetAllUnbondingDelegations() {
 				blockHeight,
 				blockTime,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1397,6 +1409,7 @@ func (s *KeeperTestSuite) TestGetAllUnbondingDelegations() {
 				blockHeight,
 				blockTime,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1504,6 +1517,7 @@ func (s *KeeperTestSuite) TestInsertUBDQueue() {
 				blockHeight,
 				blockTime,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1518,6 +1532,7 @@ func (s *KeeperTestSuite) TestInsertUBDQueue() {
 				blockHeight,
 				blockTime,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -1548,6 +1563,7 @@ func (s *KeeperTestSuite) TestInsertUBDQueue() {
 				blockHeight,
 				blockTime,
 				math.NewInt(10),
+				0,
 				address.NewBech32Codec("cosmosvaloper"),
 				address.NewBech32Codec("cosmos"),
 			)
@@ -2162,7 +2178,7 @@ func (s *KeeperTestSuite) TestInsertRedelegationQueue() {
 			// insert redelegation
 			red := stakingtypes.NewRedelegation(delAddrs[0], valAddrs[0], valAddrs[1], 0,
 				time.Unix(0, 0), math.NewInt(5),
-				math.LegacyNewDec(5), address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
+				math.LegacyNewDec(5), 0, address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
 
 			t := blockTime
 			s.Require().NoError(keeper.InsertRedelegationQueue(ctx, red, t))
@@ -2170,7 +2186,7 @@ func (s *KeeperTestSuite) TestInsertRedelegationQueue() {
 			// insert another redelegation
 			red1 := stakingtypes.NewRedelegation(delAddrs[1], valAddrs[1], valAddrs[0], 0,
 				time.Unix(0, 0), math.NewInt(5),
-				math.LegacyNewDec(5), address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
+				math.LegacyNewDec(5), 0, address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
 
 			s.Require().NoError(keeper.InsertRedelegationQueue(ctx, red1, t))
 
@@ -2194,7 +2210,7 @@ func (s *KeeperTestSuite) TestInsertRedelegationQueue() {
 			// insert another redelegation with different redelegation time and height
 			red2 := stakingtypes.NewRedelegation(delAddrs[2], valAddrs[2], valAddrs[0], 0,
 				time.Unix(0, 0), math.NewInt(5),
-				math.LegacyNewDec(5), address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
+				math.LegacyNewDec(5), 0, address.NewBech32Codec("cosmosvaloper"), address.NewBech32Codec("cosmos"))
 			t2 := blockTime.Add(-1 * time.Minute)
 			s.Require().NoError(keeper.InsertRedelegationQueue(ctx, red2, t2))
 
