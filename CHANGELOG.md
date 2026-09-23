@@ -46,6 +46,7 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 ### Improvements
 
+* (blockstm) [#26593](https://github.com/cosmos/cosmos-sdk/pull/26593) Add property-based fuzz harness for parallel execution.
 * (types) [#26729](https://github.com/cosmos/cosmos-sdk/pull/26729) Memoize `GetConfig`'s "hostname|binary|pid" registry-key fallback, which derived the executable path, hostname, and PID on every call.
 
 ### Bug Fixes
